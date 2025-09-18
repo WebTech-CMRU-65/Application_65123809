@@ -1,124 +1,263 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:table_calendar/table_calendar.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final scheme = Theme.of(context).colorScheme;
-    final email = user?.email ?? '-';
-    final initials = (email.isNotEmpty ? email[0].toUpperCase() : 'U');
-    final username = email.contains('@') ? email.split('@').first : email;
-    return Scaffold(
-      appBar: AppBar(title: const Text('โปรไฟล์')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircleAvatar(
-                  radius: 36,
-                  backgroundColor: scheme.primaryContainer,
-                  child: Text(
-                    initials,
-                    style: TextStyle(
-                      color: scheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 22,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  username,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                if (email.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    email,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    side: BorderSide(color: Colors.grey.shade200),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'รายละเอียดบัญชี',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 12),
-                        _ProfileRow(label: 'UID', value: user?.uid ?? '-'),
-                        _ProfileRow(label: 'Email', value: email),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: () async {
-                    await FirebaseAuth.instance.signOut();
-                  },
-                  icon: const Icon(Icons.logout),
-                  label: const Text('Logout'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _ProfileRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _ProfileRow({required this.label, required this.value});
+class _HomePageState extends State<HomePage> {
+  final user = FirebaseAuth.instance.currentUser!;
+  DateTime focusedDay = DateTime.now();
+  DateTime selectedDay = DateTime.now();
+  final TextEditingController _taskController = TextEditingController();
+
+  // Firestore reference
+  CollectionReference get taskRef => FirebaseFirestore.instance
+      .collection("users")
+      .doc(user.uid)
+      .collection("tasks");
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 88,
-            child: Text(
-              label,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade700),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              style: Theme.of(context).textTheme.bodyMedium,
-              overflow: TextOverflow.ellipsis,
-            ),
+    // normalize วัน
+    final startOfDay = DateTime(
+      selectedDay.year,
+      selectedDay.month,
+      selectedDay.day,
+    );
+    final endOfDay = DateTime(
+      selectedDay.year,
+      selectedDay.month,
+      selectedDay.day,
+      23,
+      59,
+      59,
+    );
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Home'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              await FirebaseAuth.instance.signOut();
+            },
           ),
         ],
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF0FB5AE), Color(0xFF60D6CB), Color(0xFFB3F0EA)],
+          ),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                children: [
+                  // 📅 Calendar
+                  TableCalendar(
+                    firstDay: DateTime.utc(2020, 1, 1),
+                    lastDay: DateTime.utc(2030, 12, 31),
+                    focusedDay: focusedDay,
+                    selectedDayPredicate: (day) => isSameDay(selectedDay, day),
+                    onDaySelected: (selected, focused) {
+                      setState(() {
+                        selectedDay = selected;
+                        focusedDay = focused;
+                      });
+                    },
+                    calendarStyle: const CalendarStyle(
+                      todayDecoration: BoxDecoration(
+                        color: Color(0xFF60D6CB),
+                        shape: BoxShape.circle,
+                      ),
+                      selectedDecoration: BoxDecoration(
+                        color: Color(0xFF0FB5AE),
+                        shape: BoxShape.circle,
+                      ),
+                      todayTextStyle: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      selectedTextStyle: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    headerStyle: const HeaderStyle(
+                      formatButtonVisible: false,
+                      titleCentered: true,
+                      titleTextStyle: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF0A3D62),
+                      ),
+                      leftChevronIcon: Icon(
+                        Icons.chevron_left,
+                        color: Color(0xFF0A3D62),
+                      ),
+                      rightChevronIcon: Icon(
+                        Icons.chevron_right,
+                        color: Color(0xFF0A3D62),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // ✅ ToDo List
+                  Expanded(
+                    child: StreamBuilder<QuerySnapshot>(
+                      stream: taskRef
+                          .where(
+                            "date",
+                            isGreaterThanOrEqualTo: Timestamp.fromDate(
+                              startOfDay,
+                            ),
+                          )
+                          .where(
+                            "date",
+                            isLessThanOrEqualTo: Timestamp.fromDate(endOfDay),
+                          )
+                          .orderBy("date")
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text("เกิดข้อผิดพลาด: ${snapshot.error}"),
+                          );
+                        }
+
+                        final docs = snapshot.data?.docs ?? [];
+                        if (docs.isEmpty) {
+                          return const Center(
+                            child: Text("ยังไม่มีงานในวันนี้"),
+                          );
+                        }
+
+                        return ListView.separated(
+                          itemCount: docs.length,
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 1, color: Colors.grey),
+                          itemBuilder: (context, index) {
+                            final doc = docs[index];
+                            final data = doc.data() as Map<String, dynamic>;
+                            final done = data["done"] ?? false;
+
+                            return Card(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 2,
+                              margin: const EdgeInsets.symmetric(
+                                vertical: 4,
+                                horizontal: 4,
+                              ),
+                              child: ListTile(
+                                leading: Checkbox(
+                                  value: done,
+                                  onChanged: (value) {
+                                    doc.reference.update({"done": value});
+                                  },
+                                ),
+                                title: Text(
+                                  data["task"] ?? "-",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    decoration: done
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                    color: done ? Colors.grey : Colors.black,
+                                  ),
+                                ),
+                                trailing: IconButton(
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Colors.red,
+                                  ),
+                                  onPressed: () => doc.reference.delete(),
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+
+                  // ➕ Add Task
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _taskController,
+                            decoration: InputDecoration(
+                              hintText:
+                                  "เพิ่มงานใหม่สำหรับ ${selectedDay.toLocal().toString().split(' ')[0]}",
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            backgroundColor: const Color(0xFF0FB5AE),
+                          ),
+                          onPressed: () async {
+                            if (_taskController.text.isNotEmpty) {
+                              await taskRef.add({
+                                "task": _taskController.text,
+                                "createdAt": FieldValue.serverTimestamp(),
+                                "date": Timestamp.fromDate(startOfDay),
+                                "done": false,
+                              });
+                              _taskController.clear();
+                            }
+                          },
+                          child: const Text(
+                            "เพิ่ม",
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
